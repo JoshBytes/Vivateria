@@ -1,0 +1,18 @@
+# Godot
+.godot/
+*.import.tmp
+export_presets.cfg
+/client/build/
+
+# Rust
+/server/target/
+**/target/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
