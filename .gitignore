@@ -16,3 +16,8 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Codex delegate scratch files
+codex-brief.txt
+codex-last.txt
+codex-run.log
