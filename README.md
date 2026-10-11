@@ -18,11 +18,14 @@ Vivateria/
 ├── docs/
 │   ├── BRS.md             ← Business Requirements Specification (source of truth)
 │   ├── BACKLOG.md         ← task queue for humans, sessions and routines
+│   ├── GOALS.md           ← ready-made /goal conditions for orchestrator sessions
 │   └── grill-log.md       ← every design decision and why
 ├── client/                ← Godot 4.7.2 client (GDScript)            [M1]
 ├── server/                ← Rust authoritative, deterministic server [M1]
 ├── protocol/              ← shared message schemas                   [M1]
-└── .claude/skills/        ← grill-me / grilling skills (MIT, Matt Pocock)
+└── .claude/
+    ├── agents/            ← worker subagents (rust-dev, godot-dev, codex-delegate, determinism-reviewer)
+    └── skills/            ← grill-me / grilling skills (MIT, Matt Pocock)
 ```
 
 ## Toolchain
