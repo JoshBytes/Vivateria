@@ -36,7 +36,7 @@ Goal: play from cell to creature solo against AI; replay test passes. (BRS §10)
   *Done when:* a solo session feels populated; AI uses only perception-limited observations.
 
 ## Human-only
-- [ ] Extract Godot 4.7.2 (`D:/Tools/Godot_v4.7.2/*.zip`) · owner: josh
+- [x] Extract Godot 4.7.2 (`D:/Tools/Godot_v4.7.2/*.zip`) · owner: josh
 - [ ] Trademark check for "Vivateria" (USPTO, EUIPO) · owner: josh
 - [ ] Optional: register vivateria.com · owner: josh
-- [ ] Finish Codex CLI setup · owner: josh
+- [x] Finish Codex CLI setup (works via codex-delegate; elevated sandbox repair optional) · owner: josh
