@@ -19,9 +19,6 @@ const MSG_DISCONNECT: int = 0x84
 
 ## Bounds-checked cursor. Once `failed` is set every read returns 0 / "".
 class Reader extends RefCounted:
-	const MAX_STRING_BYTES: int = 256
-	const MIN_ENTITY_BYTES: int = 45
-
 	var buf: PackedByteArray
 	var pos: int = 0
 	var failed: bool = false
@@ -79,6 +76,11 @@ class Reader extends RefCounted:
 			return 0
 		var v: int = buf.decode_u64(pos)
 		pos += 8
+		# GDScript has no u64: values >= 2^63 decode as negative. No legitimate tick
+		# reaches that, so reject rather than expose a wrapped value.
+		if v < 0:
+			fail("u64 out of range: " + what)
+			return 0
 		return v
 
 	func s64(what: String) -> int:

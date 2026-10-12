@@ -108,6 +108,19 @@ func _init() -> void:
 		var m: PackedByteArray = v.duplicate()
 		m[1] = 0
 		_check(not P.decode_client(m)["ok"], k + " bad magic")
+		var cv: PackedByteArray = v.duplicate()
+		cv[4] = 1
+		_check(not P.decode_client(cv)["ok"], k + " bad version")
+		var ct: PackedByteArray = v.duplicate()
+		ct[6] = 0x7F
+		_check(not P.decode_client(ct)["ok"], k + " unknown type")
+	# Tick with high bit set (>= 2^63) must be rejected
+	var hb: PackedByteArray = input.duplicate()
+	hb[14] = 0x80
+	_check(not P.decode_client(hb)["ok"], "input tick high bit")
+	var hw: PackedByteArray = welcome.duplicate()
+	hw[hw.size() - 1] = 0x80
+	_check(not P.decode_server(hw)["ok"], "welcome server_tick high bit")
 	# Wrong direction
 	_check(not P.decode_server(hello)["ok"], "server rejects hello type")
 	_check(not P.decode_client(welcome)["ok"], "client rejects welcome type")
