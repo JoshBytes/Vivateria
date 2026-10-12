@@ -66,7 +66,6 @@ pub enum DecodeError {
     UnknownVersion(u16),
     UnknownMessageType(u8),
     TrailingBytes(usize),
-    InvalidBool(u8),
     InvalidOptionTag(u8),
     InputOutOfRange { axis: &'static str, value: i8 },
     InvalidUtf8,
@@ -82,35 +81,54 @@ impl fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EncodeError {
+    StringTooLong {
+        length: usize,
+        max: usize,
+    },
+    AxisOutOfRange {
+        axis: &'static str,
+        value: i8,
+    },
+    ListTooLong {
+        field: &'static str,
+        length: usize,
+        max: usize,
+    },
+}
+
+impl fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for EncodeError {}
+
 impl ClientMsg {
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         let mut out = header(match self {
             Self::Hello { .. } => 0x01,
             Self::Input { .. } => 0x02,
         });
         match self {
             Self::Hello { client_name } => {
-                if !put_string(&mut out, client_name) {
-                    return Vec::new();
-                }
+                put_string(&mut out, client_name)?;
             }
             Self::Input {
                 tick,
                 move_x,
                 move_y,
             } => {
-                if validate_axis("move_x", *move_x).is_err()
-                    || validate_axis("move_y", *move_y).is_err()
-                {
-                    return Vec::new();
-                }
+                validate_encode_axis("move_x", *move_x)?;
+                validate_encode_axis("move_y", *move_y)?;
                 put_u64(&mut out, *tick);
                 out.push(*move_x as u8);
                 out.push(*move_y as u8);
             }
         }
-        out
+        Ok(out)
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
@@ -139,15 +157,14 @@ impl ClientMsg {
 }
 
 impl ServerMsg {
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         let mut out = header(match self {
             Self::Welcome { .. } => 0x81,
             Self::Snapshot { .. } => 0x82,
             Self::Delta { .. } => 0x83,
             Self::Disconnect { .. } => 0x84,
         });
-        let valid = match self {
+        match self {
             Self::Welcome {
                 player_id,
                 entity_id,
@@ -158,11 +175,10 @@ impl ServerMsg {
                 put_u32(&mut out, *entity_id);
                 out.push(*tick_hz);
                 put_u64(&mut out, *server_tick);
-                true
             }
             Self::Snapshot { tick, entities } => {
                 put_u64(&mut out, *tick);
-                put_entities(&mut out, entities)
+                put_entities(&mut out, "entities", entities)?;
             }
             Self::Delta {
                 base_tick,
@@ -172,15 +188,14 @@ impl ServerMsg {
             } => {
                 put_u64(&mut out, *base_tick);
                 put_u64(&mut out, *tick);
-                put_entities(&mut out, changed) && put_u32_list(&mut out, removed)
+                put_entities(&mut out, "changed", changed)?;
+                put_u32_list(&mut out, "removed", removed)?;
             }
-            Self::Disconnect { reason } => put_string(&mut out, reason),
-        };
-        if valid {
-            out
-        } else {
-            Vec::new()
+            Self::Disconnect { reason } => {
+                put_string(&mut out, reason)?;
+            }
         }
+        Ok(out)
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
@@ -220,6 +235,14 @@ fn validate_axis(axis: &'static str, value: i8) -> Result<(), DecodeError> {
     }
 }
 
+fn validate_encode_axis(axis: &'static str, value: i8) -> Result<(), EncodeError> {
+    if (-1..=1).contains(&value) {
+        Ok(())
+    } else {
+        Err(EncodeError::AxisOutOfRange { axis, value })
+    }
+}
+
 fn header(message_type: u8) -> Vec<u8> {
     let mut out = Vec::with_capacity(HEADER_LEN);
     out.extend_from_slice(MAGIC);
@@ -244,39 +267,48 @@ fn put_i64(out: &mut Vec<u8>, value: i64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
-fn put_string(out: &mut Vec<u8>, value: &str) -> bool {
+fn put_string(out: &mut Vec<u8>, value: &str) -> Result<(), EncodeError> {
     let bytes = value.as_bytes();
     if bytes.len() > MAX_STRING_BYTES {
-        return false;
+        return Err(EncodeError::StringTooLong {
+            length: bytes.len(),
+            max: MAX_STRING_BYTES,
+        });
     }
-    let Ok(len) = u16::try_from(bytes.len()) else {
-        return false;
-    };
+    let len = u16::try_from(bytes.len()).expect("maximum string length fits in u16");
     put_u16(out, len);
     out.extend_from_slice(bytes);
-    true
+    Ok(())
 }
 
-fn put_entities(out: &mut Vec<u8>, values: &[EntityState]) -> bool {
-    let Ok(count) = u16::try_from(values.len()) else {
-        return false;
-    };
+fn put_entities(
+    out: &mut Vec<u8>,
+    field: &'static str,
+    values: &[EntityState],
+) -> Result<(), EncodeError> {
+    let count = list_count(field, values.len())?;
     put_u16(out, count);
     for value in values {
         put_entity(out, value);
     }
-    true
+    Ok(())
 }
 
-fn put_u32_list(out: &mut Vec<u8>, values: &[u32]) -> bool {
-    let Ok(count) = u16::try_from(values.len()) else {
-        return false;
-    };
+fn put_u32_list(out: &mut Vec<u8>, field: &'static str, values: &[u32]) -> Result<(), EncodeError> {
+    let count = list_count(field, values.len())?;
     put_u16(out, count);
     for value in values {
         put_u32(out, *value);
     }
-    true
+    Ok(())
+}
+
+fn list_count(field: &'static str, length: usize) -> Result<u16, EncodeError> {
+    u16::try_from(length).map_err(|_| EncodeError::ListTooLong {
+        field,
+        length,
+        max: usize::from(u16::MAX),
+    })
 }
 
 fn put_entity(out: &mut Vec<u8>, value: &EntityState) {
@@ -362,15 +394,6 @@ impl<'a> Reader<'a> {
         Ok(i64::from_le_bytes(self.array()?))
     }
 
-    #[allow(dead_code)]
-    fn bool(&mut self) -> Result<bool, DecodeError> {
-        match self.u8()? {
-            0 => Ok(false),
-            1 => Ok(true),
-            other => Err(DecodeError::InvalidBool(other)),
-        }
-    }
-
     fn string(&mut self) -> Result<String, DecodeError> {
         let len = usize::from(self.u16()?);
         if len > MAX_STRING_BYTES {
@@ -443,17 +466,5 @@ impl<'a> Reader<'a> {
         } else {
             Err(DecodeError::TrailingBytes(remaining))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{DecodeError, Reader};
-
-    #[test]
-    fn bool_accepts_only_zero_and_one() {
-        assert_eq!(Reader::new(&[0]).bool(), Ok(false));
-        assert_eq!(Reader::new(&[1]).bool(), Ok(true));
-        assert_eq!(Reader::new(&[2]).bool(), Err(DecodeError::InvalidBool(2)));
     }
 }

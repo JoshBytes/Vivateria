@@ -1,5 +1,5 @@
 use vivateria_fixed::{Fx, Pcg32};
-use vivateria_protocol::{ClientMsg, DecodeError, EntityState, ServerMsg, Vec2};
+use vivateria_protocol::{ClientMsg, DecodeError, EncodeError, EntityState, ServerMsg, Vec2};
 
 fn entity(id: u32, owner: Option<u32>, values: [i64; 5]) -> EntityState {
     EntityState {
@@ -27,7 +27,7 @@ fn every_client_variant_round_trips_with_edges() {
         },
     ];
     for message in messages {
-        assert_eq!(ClientMsg::decode(&message.encode()), Ok(message));
+        assert_eq!(ClientMsg::decode(&message.encode().unwrap()), Ok(message));
     }
 }
 
@@ -62,7 +62,7 @@ fn every_server_variant_round_trips_with_edges() {
         },
     ];
     for message in messages {
-        assert_eq!(ServerMsg::decode(&message.encode()), Ok(message));
+        assert_eq!(ServerMsg::decode(&message.encode().unwrap()), Ok(message));
     }
 }
 
@@ -71,6 +71,47 @@ fn hello_frame() -> Vec<u8> {
         client_name: "ok".into(),
     }
     .encode()
+    .unwrap()
+}
+
+#[test]
+fn encode_reports_invalid_values() {
+    assert_eq!(
+        ClientMsg::Hello {
+            client_name: "x".repeat(257)
+        }
+        .encode(),
+        Err(EncodeError::StringTooLong {
+            length: 257,
+            max: 256
+        })
+    );
+    assert_eq!(
+        ClientMsg::Input {
+            tick: 0,
+            move_x: -2,
+            move_y: 0
+        }
+        .encode(),
+        Err(EncodeError::AxisOutOfRange {
+            axis: "move_x",
+            value: -2
+        })
+    );
+    assert_eq!(
+        ServerMsg::Delta {
+            base_tick: 0,
+            tick: 1,
+            changed: Vec::new(),
+            removed: vec![0; usize::from(u16::MAX) + 1]
+        }
+        .encode(),
+        Err(EncodeError::ListTooLong {
+            field: "removed",
+            length: usize::from(u16::MAX) + 1,
+            max: usize::from(u16::MAX)
+        })
+    );
 }
 
 #[test]
@@ -110,12 +151,35 @@ fn rejects_bad_header_type_truncation_and_trailing_data() {
 }
 
 #[test]
+fn rejects_messages_from_the_wrong_direction() {
+    let server_frame = ServerMsg::Welcome {
+        player_id: 1,
+        entity_id: 2,
+        tick_hz: 20,
+        server_tick: 3,
+    }
+    .encode()
+    .unwrap();
+    assert_eq!(
+        ClientMsg::decode(&server_frame),
+        Err(DecodeError::UnknownMessageType(0x81))
+    );
+
+    let client_frame = hello_frame();
+    assert_eq!(
+        ServerMsg::decode(&client_frame),
+        Err(DecodeError::UnknownMessageType(0x01))
+    );
+}
+
+#[test]
 fn rejects_invalid_options_inputs_and_strings() {
     let mut option = ServerMsg::Snapshot {
         tick: 0,
         entities: vec![entity(1, None, [0; 5])],
     }
-    .encode();
+    .encode()
+    .unwrap();
     option[21] = 2;
     assert_eq!(
         ServerMsg::decode(&option),
@@ -127,13 +191,24 @@ fn rejects_invalid_options_inputs_and_strings() {
         move_x: 0,
         move_y: 0,
     }
-    .encode();
+    .encode()
+    .unwrap();
     input[15] = 2;
     assert_eq!(
         ClientMsg::decode(&input),
         Err(DecodeError::InputOutOfRange {
             axis: "move_x",
             value: 2
+        })
+    );
+
+    input[15] = 0;
+    input[16] = 0x80;
+    assert_eq!(
+        ClientMsg::decode(&input),
+        Err(DecodeError::InputOutOfRange {
+            axis: "move_y",
+            value: -128
         })
     );
 
@@ -162,6 +237,23 @@ fn rejects_impossible_list_counts_before_allocating() {
             item_size: 45
         })
     );
+
+    let mut delta = ServerMsg::Delta {
+        base_tick: 0,
+        tick: 1,
+        changed: Vec::new(),
+        removed: vec![42],
+    }
+    .encode()
+    .unwrap();
+    delta[25..27].copy_from_slice(&2_u16.to_le_bytes());
+    assert_eq!(
+        ServerMsg::decode(&delta),
+        Err(DecodeError::CountExceedsRemaining {
+            count: 2,
+            item_size: 4
+        })
+    );
 }
 
 #[test]
@@ -185,7 +277,8 @@ fn arbitrary_bytes_and_valid_frame_truncations_never_panic() {
             changed: vec![entity(7, Some(3), [1, -1, i64::MIN, i64::MAX, 0])],
             removed: vec![1, 2, 3],
         }
-        .encode(),
+        .encode()
+        .unwrap(),
     ];
     for frame in frames {
         for end in 0..frame.len() {
@@ -268,11 +361,49 @@ enum ServerOrClient {
 #[test]
 fn encodings_match_golden_vectors_exactly() {
     for (message, expected) in sample_messages() {
-        let bytes = match message {
-            ServerOrClient::Client(message) => message.encode(),
-            ServerOrClient::Server(message) => message.encode(),
+        let bytes = match &message {
+            ServerOrClient::Client(message) => message.encode().unwrap(),
+            ServerOrClient::Server(message) => message.encode().unwrap(),
         };
         assert_eq!(hex(&bytes), expected.trim());
+
+        let golden_bytes = decode_hex(expected);
+        assert_eq!(golden_bytes, bytes);
+        match message {
+            ServerOrClient::Client(expected_message) => {
+                assert_eq!(ClientMsg::decode(&golden_bytes), Ok(expected_message));
+            }
+            ServerOrClient::Server(expected_message) => {
+                assert_eq!(ServerMsg::decode(&golden_bytes), Ok(expected_message));
+            }
+        }
+    }
+}
+
+fn decode_hex(text: &str) -> Vec<u8> {
+    let text = text.trim();
+    assert!(!text.is_empty());
+    assert!(text.len().is_multiple_of(2));
+    assert!(text
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    text.as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+            let high = hex_digit(pair[0]);
+            let low = hex_digit(pair[1]);
+            (high << 4) | low
+        })
+        .collect()
+}
+
+fn hex_digit(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        _ => unreachable!("validated lowercase hexadecimal digit"),
     }
 }
 

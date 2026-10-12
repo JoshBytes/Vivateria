@@ -22,7 +22,7 @@ start of the payload and fields appear without padding.
 |---|---|
 | `u8`, `i8` | One unsigned or two's-complement signed byte |
 | `u16`, `u32`, `u64`, `i64` | Little-endian integer of the stated width; signed values use two's complement |
-| `bool` | A `u8`: `0` is false and `1` is true; no other value is valid |
+| `bool` | Reserved for future protocol versions; when introduced, a `u8`: `0` is false and `1` is true; no other value is valid |
 | `String` | A `u16` byte length followed by exactly that many UTF-8 bytes; length is at most 256 bytes |
 | `Option<T>` | A `u8` tag: `0` means no value and has no following bytes; `1` means one encoded `T` follows |
 | `List<T>` | A `u16` item count followed by exactly that many encoded `T` values |
@@ -31,6 +31,7 @@ start of the payload and fields appear without padding.
 
 Lengths and counts describe bytes or items, respectively, not Unicode scalar values. Encoders
 must not emit a string longer than 256 UTF-8 bytes or a list longer than 65,535 items.
+Protocol v0 has no `bool` fields.
 
 ## Client to server
 
@@ -95,10 +96,11 @@ must not emit a string longer than 256 UTF-8 bytes or a list longer than 65,535 
 
 A decoder must reject the entire frame if any of the following is true: the magic is not
 `VIVA`; the version is not `0`; the message type is unknown for the receiving direction; any
-field is truncated; any bytes remain after the specified message; a `bool` or option tag is not
-`0` or `1`; either input axis is outside `-1..=1`; a string is invalid UTF-8; or a string's byte
-length exceeds 256. Decoders must validate lengths and counts against the bytes remaining before
-allocating or iterating, and must fail safely rather than panic on arbitrary input.
+field is truncated; any bytes remain after the specified message; an option tag is not `0` or `1`;
+either input axis is outside `-1..=1`; a string is invalid UTF-8; or a string's byte length exceeds
+256. A decoder must reject a string length greater than 256 before reading the string bytes.
+Decoders must validate lengths and counts against the bytes remaining before allocating or
+iterating, and must fail safely rather than panic on arbitrary input.
 
 Protocol v0 contains no human-only actions. Stage advancement, opening the editor or evolving,
 and forming or breaking alliances must never be exposed through the Agent API.
