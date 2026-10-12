@@ -21,8 +21,13 @@ Known Windows constraints (verified 2026-10-11, codex-cli 0.162.1):
    "$CODEX" exec -c 'windows.sandbox="unelevated"' --sandbox workspace-write --ephemeral --color never \
      -C "$(pwd -W)" -o codex-last.txt - < codex-brief.txt > codex-run.log 2>&1
    ```
-   Start the brief with: "Follow AGENTS.md. Stay in scope. Do NOT run git add/commit; the caller commits. Run the tests and report the results."
-3. Read `codex-last.txt`, review `git diff --stat`, delete `codex-brief.txt`, `codex-last.txt` and `codex-run.log`, then commit the changes with a clear message ending in `(implemented by Codex)`.
+   Start the brief with: "Follow AGENTS.md, including its Sandbox and network hard rules. Stay in scope. Do NOT run git add/commit; the caller commits. Never bypass the sandbox or network restrictions (no proxies, no TLS changes, no proxy or registry env vars, no background processes). If something can't be fetched or is blocked, stop and say so. Run the tests and report the results."
+3. **Before committing, run the guardrail check:**
+   - `git status --short`: any file outside the task's scope (e.g. helper scripts, `*.py`, `.cargo/`, config files) means stop.
+   - `grep -nE 'proxy|PROXY|CARGO_REGISTRIES|CARGO_NET|unverified|_create_unverified_context|verify=False|Start-Process|-WindowStyle Hidden' codex-run.log`: any hit that shows Codex bypassing the sandbox or network, or launching background processes, means stop.
+   - On a stop, do NOT commit. Kill any process Codex started, leave the files in place for inspection, and report the evidence (file names, log line numbers) to the orchestrator.
+   - Network failures (e.g. "SSL connect error", "no matching package") are expected inside the sandbox. Report them so the orchestrator can pre-fetch the dependencies. Never fix them yourself.
+4. Read `codex-last.txt`, review `git diff --stat`, delete `codex-brief.txt`, `codex-last.txt` and `codex-run.log`, then commit the changes with a clear message ending in `(implemented by Codex)`.
 
 ## Second-opinion review
 ```bash
@@ -31,4 +36,5 @@ Known Windows constraints (verified 2026-10-11, codex-cli 0.162.1):
 ```
 
 ## Report
+If the guardrail check stopped you, lead with that.
 Under 15 lines: Codex's summary, files changed, test results, and the commit hash. If Codex errors (auth, sandbox, timeout), report the error line from `codex-run.log` and stop. Don't retry more than once.
