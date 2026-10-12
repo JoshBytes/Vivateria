@@ -67,6 +67,7 @@ const fn interp(table: &[i64; 1025], t: i64) -> i64 {
 #[repr(transparent)]
 pub struct Fx(i64);
 
+#[allow(clippy::should_implement_trait)]
 impl Fx {
     pub const ZERO: Fx = Fx(0);
     pub const ONE: Fx = Fx(1 << FRAC_BITS);
@@ -114,12 +115,10 @@ impl Fx {
     /// `num / den` as a fixed-point value (division semantics, see [`Fx::div`]).
     #[inline]
     pub const fn from_ratio(num: i64, den: i64) -> Fx {
-        Fx::from_int_i64(num).div(Fx::from_int_i64(den))
-    }
-
-    #[inline]
-    const fn from_int_i64(v: i64) -> Fx {
-        Fx(sat((v as i128) << FRAC_BITS))
+        if den == 0 {
+            return if num >= 0 { Fx::MAX } else { Fx::MIN };
+        }
+        Fx(sat(((num as i128) << FRAC_BITS) / (den as i128)))
     }
 
     /// Absolute value; `MIN` saturates to `MAX`.
@@ -416,6 +415,7 @@ macro_rules! binop {
     };
 }
 
+#[allow(clippy::should_implement_trait)]
 impl Fx {
     #[inline]
     const fn add(self, rhs: Fx) -> Fx {
@@ -483,6 +483,9 @@ mod tests {
         assert_eq!(fx(i32::MIN).to_int_floor(), i32::MIN);
         assert_eq!(Fx::from_ratio(1, 2), Fx::HALF);
         assert_eq!(Fx::from_ratio(-3, 2).to_raw(), -(3 << 31));
+        assert_eq!(Fx::from_ratio(1i64 << 40, 1 << 20), fx(1 << 20));
+        assert_eq!(Fx::from_ratio(-(1i64 << 40), 1 << 20), fx(-(1 << 20)));
+        assert_eq!(Fx::from_ratio(i64::MAX, 1), Fx::MAX);
         assert_eq!(Fx::from_ratio(1, 0), Fx::MAX);
         assert_eq!(Fx::from_ratio(-1, 0), Fx::MIN);
     }

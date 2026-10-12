@@ -59,7 +59,8 @@ impl Pcg32 {
         (hi << 32) | lo
     }
 
-    /// Unbiased value in `[0, bound)` (rejection sampling). `bound == 0` returns 0
+    /// Unbiased value in `[0, bound)`, using PCG's rejection method (reject outputs
+    /// below `-bound % bound`, then reduce with `%`). `bound == 0` returns 0
     /// without consuming any output.
     pub fn range_u32(&mut self, bound: u32) -> u32 {
         if bound == 0 {
@@ -94,9 +95,10 @@ impl Pcg32 {
         if hi <= lo {
             return lo;
         }
-        let span = hi.saturating_sub(lo);
-        let u = self.next_fx_unit();
-        lo.saturating_add(span * u)
+        // Span up to 2^64 - 1 raw units; computed in i128 so the full range is covered.
+        let span = i128::from(hi.to_raw()) - i128::from(lo.to_raw());
+        let off = (span * i128::from(self.next_fx_unit().to_raw())) >> 32;
+        Fx::from_raw((i128::from(lo.to_raw()) + off) as i64)
     }
 }
 
@@ -187,7 +189,19 @@ mod tests {
         }
         assert_eq!(rng.fx_range(Fx::ONE, Fx::ONE), Fx::ONE);
         // full-width range must not overflow/panic
-        let _ = rng.fx_range(Fx::MIN, Fx::MAX);
+        let (mut neg, mut pos) = (false, false);
+        for _ in 0..200 {
+            let v = rng.fx_range(Fx::MIN, Fx::MAX);
+            neg |= v < Fx::ZERO;
+            pos |= v > Fx::ZERO;
+        }
+        assert!(neg && pos);
+        // lo + span must reach above lo + MAX
+        let mut above = false;
+        for _ in 0..200 {
+            above |= rng.fx_range(Fx::MIN, Fx::MAX) > Fx::from_raw(-1 + (1 << 62));
+        }
+        assert!(above);
     }
 
     #[test]

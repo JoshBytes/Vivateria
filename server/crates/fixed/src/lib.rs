@@ -1,7 +1,6 @@
 //! Deterministic fixed-point math (Q32.32) and PCG32 RNG for the Vivateria simulation.
 //!
 //! No floating point appears in any public signature or in simulation code paths.
-#![allow(clippy::should_implement_trait)]
 
 mod fx;
 mod rng;
