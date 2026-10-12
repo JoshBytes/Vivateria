@@ -19,6 +19,9 @@ const MSG_DISCONNECT: int = 0x84
 
 ## Bounds-checked cursor. Once `failed` is set every read returns 0 / "".
 class Reader extends RefCounted:
+	const MAX_STRING_BYTES: int = 256
+	const MIN_ENTITY_BYTES: int = 45
+
 	var buf: PackedByteArray
 	var pos: int = 0
 	var failed: bool = false
@@ -85,18 +88,55 @@ class Reader extends RefCounted:
 		pos += 8
 		return v
 
+	static func utf8_ok(b: PackedByteArray) -> bool:
+		var i: int = 0
+		var n: int = b.size()
+		while i < n:
+			var c: int = b[i]
+			if c < 0x80:
+				i += 1
+				continue
+			var extra: int = 0
+			var minv: int = 0
+			var cp: int = 0
+			if c >= 0xC2 and c <= 0xDF:
+				extra = 1
+				minv = 0x80
+				cp = c & 0x1F
+			elif c >= 0xE0 and c <= 0xEF:
+				extra = 2
+				minv = 0x800
+				cp = c & 0x0F
+			elif c >= 0xF0 and c <= 0xF4:
+				extra = 3
+				minv = 0x10000
+				cp = c & 0x07
+			else:
+				return false
+			if i + extra >= n:
+				return false
+			for k in range(1, extra + 1):
+				var cc: int = b[i + k]
+				if (cc & 0xC0) != 0x80:
+					return false
+				cp = (cp << 6) | (cc & 0x3F)
+			if cp < minv or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF):
+				return false
+			i += extra + 1
+		return true
+
 	func string(what: String) -> String:
 		var n: int = u16(what + " length")
 		if failed:
 			return ""
-		if n > Protocol.MAX_STRING_BYTES:
+		if n > MAX_STRING_BYTES:
 			fail("string too long: " + what)
 			return ""
 		if not need(n, what):
 			return ""
 		var slice: PackedByteArray = buf.slice(pos, pos + n)
 		pos += n
-		if not Protocol.is_valid_utf8(slice):
+		if not utf8_ok(slice):
 			fail("invalid utf-8: " + what)
 			return ""
 		return slice.get_string_from_utf8()
@@ -123,7 +163,7 @@ class Reader extends RefCounted:
 	func entity_list(what: String) -> Array:
 		var out: Array = []
 		var n: int = u16(what + " count")
-		if not failed and n * Protocol.MIN_ENTITY_BYTES > remaining():
+		if not failed and n * MIN_ENTITY_BYTES > remaining():
 			fail("truncated " + what)
 			return out
 		for i in n:
@@ -138,41 +178,7 @@ static func fx_to_float(raw: int) -> float:
 
 
 static func is_valid_utf8(b: PackedByteArray) -> bool:
-	var i: int = 0
-	var n: int = b.size()
-	while i < n:
-		var c: int = b[i]
-		if c < 0x80:
-			i += 1
-			continue
-		var extra: int = 0
-		var minv: int = 0
-		var cp: int = 0
-		if c >= 0xC2 and c <= 0xDF:
-			extra = 1
-			minv = 0x80
-			cp = c & 0x1F
-		elif c >= 0xE0 and c <= 0xEF:
-			extra = 2
-			minv = 0x800
-			cp = c & 0x0F
-		elif c >= 0xF0 and c <= 0xF4:
-			extra = 3
-			minv = 0x10000
-			cp = c & 0x07
-		else:
-			return false
-		if i + extra >= n:
-			return false
-		for k in range(1, extra + 1):
-			var cc: int = b[i + k]
-			if (cc & 0xC0) != 0x80:
-				return false
-			cp = (cp << 6) | (cc & 0x3F)
-		if cp < minv or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF):
-			return false
-		i += extra + 1
-	return true
+	return Reader.utf8_ok(b)
 
 
 static func _header(r: Reader) -> int:
