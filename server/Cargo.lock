@@ -16,3 +16,6 @@ dependencies = [
 [[package]]
 name = "vivateria-sim"
 version = "0.1.0"
+dependencies = [
+ "vivateria-fixed",
+]
