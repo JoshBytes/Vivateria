@@ -33,6 +33,11 @@ Lengths and counts describe bytes or items, respectively, not Unicode scalar val
 must not emit a string longer than 256 UTF-8 bytes or a list longer than 65,535 items.
 Protocol v0 has no `bool` fields.
 
+Every tick field (`Input.tick`, `Welcome.server_tick`, `Snapshot.tick`, `Delta.base_tick`, and
+`Delta.tick`) is a `u64` on the wire whose value MUST be less than `2^63` (at most
+`0x7FFF_FFFF_FFFF_FFFF`). Decoders must reject larger values, and encoders must refuse to encode
+them.
+
 ## Client to server
 
 ### `0x01` — `Hello`
@@ -97,8 +102,9 @@ Protocol v0 has no `bool` fields.
 A decoder must reject the entire frame if any of the following is true: the magic is not
 `VIVA`; the version is not `0`; the message type is unknown for the receiving direction; any
 field is truncated; any bytes remain after the specified message; an option tag is not `0` or `1`;
-either input axis is outside `-1..=1`; a string is invalid UTF-8; or a string's byte length exceeds
-256. A decoder must reject a string length greater than 256 before reading the string bytes.
+either input axis is outside `-1..=1`; a string is invalid UTF-8; a string's byte length exceeds
+256; or any tick field is `2^63` or greater. A decoder must reject a string length greater than
+256 before reading the string bytes.
 Decoders must validate lengths and counts against the bytes remaining before allocating or
 iterating, and must fail safely rather than panic on arbitrary input.
 

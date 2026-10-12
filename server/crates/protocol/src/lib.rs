@@ -8,6 +8,7 @@ const VERSION: u16 = 0;
 const HEADER_LEN: usize = 7;
 const MAX_STRING_BYTES: usize = 256;
 const MIN_ENTITY_BYTES: usize = 45;
+const MAX_TICK: u64 = i64::MAX as u64;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Vec2 {
@@ -68,6 +69,7 @@ pub enum DecodeError {
     TrailingBytes(usize),
     InvalidOptionTag(u8),
     InputOutOfRange { axis: &'static str, value: i8 },
+    TickOutOfRange { field: &'static str, value: u64 },
     InvalidUtf8,
     StringTooLong(usize),
     CountExceedsRemaining { count: u16, item_size: usize },
@@ -90,6 +92,10 @@ pub enum EncodeError {
     AxisOutOfRange {
         axis: &'static str,
         value: i8,
+    },
+    TickOutOfRange {
+        field: &'static str,
+        value: u64,
     },
     ListTooLong {
         field: &'static str,
@@ -123,7 +129,7 @@ impl ClientMsg {
             } => {
                 validate_encode_axis("move_x", *move_x)?;
                 validate_encode_axis("move_y", *move_y)?;
-                put_u64(&mut out, *tick);
+                put_tick(&mut out, "Input.tick", *tick)?;
                 out.push(*move_x as u8);
                 out.push(*move_y as u8);
             }
@@ -139,7 +145,7 @@ impl ClientMsg {
                 client_name: reader.string()?,
             },
             0x02 => {
-                let tick = reader.u64()?;
+                let tick = reader.tick("Input.tick")?;
                 let move_x = reader.i8()?;
                 let move_y = reader.i8()?;
                 validate_axis("move_x", move_x)?;
@@ -174,10 +180,10 @@ impl ServerMsg {
                 put_u32(&mut out, *player_id);
                 put_u32(&mut out, *entity_id);
                 out.push(*tick_hz);
-                put_u64(&mut out, *server_tick);
+                put_tick(&mut out, "Welcome.server_tick", *server_tick)?;
             }
             Self::Snapshot { tick, entities } => {
-                put_u64(&mut out, *tick);
+                put_tick(&mut out, "Snapshot.tick", *tick)?;
                 put_entities(&mut out, "entities", entities)?;
             }
             Self::Delta {
@@ -186,8 +192,8 @@ impl ServerMsg {
                 changed,
                 removed,
             } => {
-                put_u64(&mut out, *base_tick);
-                put_u64(&mut out, *tick);
+                put_tick(&mut out, "Delta.base_tick", *base_tick)?;
+                put_tick(&mut out, "Delta.tick", *tick)?;
                 put_entities(&mut out, "changed", changed)?;
                 put_u32_list(&mut out, "removed", removed)?;
             }
@@ -206,15 +212,15 @@ impl ServerMsg {
                 player_id: reader.u32()?,
                 entity_id: reader.u32()?,
                 tick_hz: reader.u8()?,
-                server_tick: reader.u64()?,
+                server_tick: reader.tick("Welcome.server_tick")?,
             },
             0x82 => Self::Snapshot {
-                tick: reader.u64()?,
+                tick: reader.tick("Snapshot.tick")?,
                 entities: reader.entities()?,
             },
             0x83 => Self::Delta {
-                base_tick: reader.u64()?,
-                tick: reader.u64()?,
+                base_tick: reader.tick("Delta.base_tick")?,
+                tick: reader.tick("Delta.tick")?,
                 changed: reader.entities()?,
                 removed: reader.u32_list()?,
             },
@@ -261,6 +267,14 @@ fn put_u32(out: &mut Vec<u8>, value: u32) {
 
 fn put_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn put_tick(out: &mut Vec<u8>, field: &'static str, value: u64) -> Result<(), EncodeError> {
+    if value > MAX_TICK {
+        return Err(EncodeError::TickOutOfRange { field, value });
+    }
+    put_u64(out, value);
+    Ok(())
 }
 
 fn put_i64(out: &mut Vec<u8>, value: i64) {
@@ -388,6 +402,15 @@ impl<'a> Reader<'a> {
 
     fn u64(&mut self) -> Result<u64, DecodeError> {
         Ok(u64::from_le_bytes(self.array()?))
+    }
+
+    fn tick(&mut self, field: &'static str) -> Result<u64, DecodeError> {
+        let value = self.u64()?;
+        if value > MAX_TICK {
+            Err(DecodeError::TickOutOfRange { field, value })
+        } else {
+            Ok(value)
+        }
     }
 
     fn i64(&mut self) -> Result<i64, DecodeError> {

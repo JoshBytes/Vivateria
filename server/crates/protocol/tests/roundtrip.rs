@@ -21,7 +21,7 @@ fn every_client_variant_round_trips_with_edges() {
             client_name: "x".repeat(256),
         },
         ClientMsg::Input {
-            tick: u64::MAX,
+            tick: i64::MAX as u64,
             move_x: -1,
             move_y: 1,
         },
@@ -38,10 +38,10 @@ fn every_server_variant_round_trips_with_edges() {
             player_id: u32::MAX,
             entity_id: 0,
             tick_hz: 20,
-            server_tick: u64::MAX,
+            server_tick: i64::MAX as u64,
         },
         ServerMsg::Snapshot {
-            tick: 0,
+            tick: i64::MAX as u64,
             entities: Vec::new(),
         },
         ServerMsg::Snapshot {
@@ -52,8 +52,8 @@ fn every_server_variant_round_trips_with_edges() {
             ],
         },
         ServerMsg::Delta {
-            base_tick: 4,
-            tick: 5,
+            base_tick: i64::MAX as u64,
+            tick: i64::MAX as u64,
             changed: Vec::new(),
             removed: Vec::new(),
         },
@@ -112,6 +112,107 @@ fn encode_reports_invalid_values() {
             max: usize::from(u16::MAX)
         })
     );
+}
+
+#[test]
+fn encode_rejects_every_tick_field_at_two_to_the_63() {
+    const INVALID_TICK: u64 = 1_u64 << 63;
+    let client = ClientMsg::Input {
+        tick: INVALID_TICK,
+        move_x: 0,
+        move_y: 0,
+    };
+    assert_eq!(
+        client.encode(),
+        Err(EncodeError::TickOutOfRange {
+            field: "Input.tick",
+            value: INVALID_TICK,
+        })
+    );
+
+    let server_messages = [
+        (
+            ServerMsg::Welcome {
+                player_id: 0,
+                entity_id: 0,
+                tick_hz: 20,
+                server_tick: INVALID_TICK,
+            },
+            "Welcome.server_tick",
+        ),
+        (
+            ServerMsg::Snapshot {
+                tick: INVALID_TICK,
+                entities: Vec::new(),
+            },
+            "Snapshot.tick",
+        ),
+        (
+            ServerMsg::Delta {
+                base_tick: INVALID_TICK,
+                tick: 0,
+                changed: Vec::new(),
+                removed: Vec::new(),
+            },
+            "Delta.base_tick",
+        ),
+        (
+            ServerMsg::Delta {
+                base_tick: 0,
+                tick: INVALID_TICK,
+                changed: Vec::new(),
+                removed: Vec::new(),
+            },
+            "Delta.tick",
+        ),
+    ];
+    for (message, field) in server_messages {
+        assert_eq!(
+            message.encode(),
+            Err(EncodeError::TickOutOfRange {
+                field,
+                value: INVALID_TICK,
+            })
+        );
+    }
+}
+
+#[test]
+fn decode_rejects_out_of_range_client_and_server_ticks() {
+    for invalid_tick in [1_u64 << 63, u64::MAX] {
+        let mut input = ClientMsg::Input {
+            tick: 0,
+            move_x: 0,
+            move_y: 0,
+        }
+        .encode()
+        .unwrap();
+        input[7..15].copy_from_slice(&invalid_tick.to_le_bytes());
+        assert_eq!(
+            ClientMsg::decode(&input),
+            Err(DecodeError::TickOutOfRange {
+                field: "Input.tick",
+                value: invalid_tick,
+            })
+        );
+
+        let mut welcome = ServerMsg::Welcome {
+            player_id: 1,
+            entity_id: 2,
+            tick_hz: 20,
+            server_tick: 0,
+        }
+        .encode()
+        .unwrap();
+        welcome[16..24].copy_from_slice(&invalid_tick.to_le_bytes());
+        assert_eq!(
+            ServerMsg::decode(&welcome),
+            Err(DecodeError::TickOutOfRange {
+                field: "Welcome.server_tick",
+                value: invalid_tick,
+            })
+        );
+    }
 }
 
 #[test]
