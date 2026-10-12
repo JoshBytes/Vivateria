@@ -1,0 +1,4 @@
+disallowed-types = [
+    { path = "f32", reason = "floats are forbidden in deterministic simulation code" },
+    { path = "f64", reason = "floats are forbidden in deterministic simulation code" },
+]
