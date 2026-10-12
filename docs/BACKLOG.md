@@ -7,13 +7,13 @@ Take the **top unchecked task whose owner fits you**. Owners: `josh` (human-only
 ## M1 — Local playable core
 Goal: play from cell to creature solo against AI; replay test passes. (BRS §10)
 
-- [ ] **M1-01 Repo scaffold** · owner: attended
+- [x] **M1-01 Repo scaffold** · owner: attended
   `client/` Godot 4.7.2 project, `server/` Cargo workspace, `protocol/` folder, `.gitignore`, CI stub.
   *Done when:* Godot opens `client/project.godot`; `cargo build` and `cargo test` pass in `server/`.
-- [ ] **M1-02 Fixed-point math crate** · owner: attended
+- [x] **M1-02 Fixed-point math crate** · owner: attended
   `server/crates/fixed`: Q-format type, + − × ÷, sqrt, trig via lookup tables, deterministic RNG.
   *Done when:* unit tests pass; no floats in the public API.
-- [ ] **M1-03 Tick loop + replay test** · owner: attended
+- [x] **M1-03 Tick loop + replay test** · owner: attended
   20 Hz simulation step over world state; input log; state hashing.
   *Done when:* replaying the same inputs twice gives byte-identical state hashes; this test runs in CI.
 - [ ] **M1-04 Protocol v0** · owner: any

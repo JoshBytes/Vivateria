@@ -21,3 +21,6 @@ Thumbs.db
 codex-brief.txt
 codex-last.txt
 codex-run.log
+
+# Claude Code agent worktrees
+.claude/worktrees/
