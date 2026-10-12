@@ -42,14 +42,29 @@ fn replay_same_inputs_gives_identical_state_hashes() {
 }
 
 #[test]
-fn changed_input_changes_final_hash() {
+fn changed_input_changes_hash_from_that_tick() {
     let log = build_log();
     let mut entries = log.entries().to_vec();
+    let t = entries[10].0 as usize;
     entries[10].1.move_x = if entries[10].1.move_x == 1 { -1 } else { 1 };
     let other = InputLog::from_entries(entries);
     let a = run_replay(SEED, &log, TICKS);
     let b = run_replay(SEED, &other, TICKS);
-    assert_ne!(a.last(), b.last());
+    assert_eq!(a[..t], b[..t]);
+    assert_ne!(a[t], b[t]);
+}
+
+/// Pin once tests can link: run `cargo test replay_golden_hash -- --nocapture`.
+const GOLDEN_FINAL_HASH: Option<u64> = None;
+
+#[test]
+fn replay_golden_hash() {
+    let hashes = run_replay(SEED, &build_log(), TICKS);
+    let last = *hashes.last().unwrap();
+    match GOLDEN_FINAL_HASH {
+        Some(g) => assert_eq!(last, g),
+        None => println!("GOLDEN_FINAL_HASH not pinned; computed {last:#018x}"),
+    }
 }
 
 #[test]

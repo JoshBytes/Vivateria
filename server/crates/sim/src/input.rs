@@ -92,11 +92,18 @@ impl InputLog {
 
     /// Format: magic "VINP", version u8, count u32 LE, then per entry
     /// tick u64 LE, player u32 LE, move_x i8, move_y i8.
+    ///
+    /// # Panics
+    /// Panics if the log holds more than `u32::MAX` entries (format limit).
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(HEADER_LEN + self.entries.len() * ENTRY_LEN);
         out.extend_from_slice(&MAGIC);
         out.push(VERSION);
-        out.extend_from_slice(&(self.entries.len() as u32).to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(self.entries.len())
+                .expect("input log exceeds u32::MAX entries")
+                .to_le_bytes(),
+        );
         for (tick, inp) in &self.entries {
             out.extend_from_slice(&tick.to_le_bytes());
             out.extend_from_slice(&inp.player.to_le_bytes());
