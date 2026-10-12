@@ -7,6 +7,14 @@ name = "vivateria-fixed"
 version = "0.1.0"
 
 [[package]]
+name = "vivateria-protocol"
+version = "0.1.0"
+dependencies = [
+ "vivateria-fixed",
+ "vivateria-sim",
+]
+
+[[package]]
 name = "vivateria-server"
 version = "0.1.0"
 dependencies = [
