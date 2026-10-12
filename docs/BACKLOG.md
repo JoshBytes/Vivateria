@@ -16,7 +16,7 @@ Goal: play from cell to creature solo against AI; replay test passes. (BRS §10)
 - [x] **M1-03 Tick loop + replay test** · owner: attended
   20 Hz simulation step over world state; input log; state hashing.
   *Done when:* replaying the same inputs twice gives byte-identical state hashes; this test runs in CI.
-- [ ] **M1-04 Protocol v0** · owner: any
+- [x] **M1-04 Protocol v0** · owner: any
   Message schemas for connect, input, and state snapshot/delta in `protocol/`.
   *Done when:* schema doc + Rust types + GDScript decoder, round-trip test passes.
 - [ ] **M1-05 WebSocket link** · owner: any
