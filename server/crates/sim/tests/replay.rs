@@ -55,7 +55,7 @@ fn changed_input_changes_hash_from_that_tick() {
 }
 
 /// Pin once tests can link: run `cargo test replay_golden_hash -- --nocapture`.
-const GOLDEN_FINAL_HASH: Option<u64> = None;
+const GOLDEN_FINAL_HASH: Option<u64> = Some(0x8ca3_2de7_8696_c4f6);
 
 #[test]
 fn replay_golden_hash() {
